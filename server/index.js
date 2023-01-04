@@ -19,15 +19,14 @@ const pgClient = new Pool({
   port: keys.pgPort,
 });
 
-// Create table if it doesn't exist
 pgClient.on("connect", (client) => {
   client
     .query("CREATE TABLE IF NOT EXISTS values (number INT)")
-    .catch((err) => console.log(err));
+    .catch((err) => console.error(err));
 });
 
 // Redis Client Setup
-const redis = rquire("redis");
+const redis = require("redis");
 const redisClient = redis.createClient({
   host: keys.redisHost,
   port: keys.redisPort,
@@ -35,47 +34,38 @@ const redisClient = redis.createClient({
 });
 const redisPublisher = redisClient.duplicate();
 
-// Exress route handlers
+// Express route handlers
 
-// Set up a get route to test the server
 app.get("/", (req, res) => {
   res.send("Hi");
 });
 
-// Set up a get route to get all the values from the postgres table
 app.get("/values/all", async (req, res) => {
-  const values = await pgClient.query("SSELECT * from values");
+  const values = await pgClient.query("SELECT * from values");
 
   res.send(values.rows);
 });
 
-// Set up a get route to get the current values from the redis hash
 app.get("/values/current", async (req, res) => {
   redisClient.hgetall("values", (err, values) => {
     res.send(values);
   });
 });
 
-// Set up a post route to add a new index to the redis hash
-app.post("values", async (req, res) => {
-  const { index } = req.body;
+app.post("/values", async (req, res) => {
+  const index = req.body.index;
 
-  // Limit the index to 40
   if (parseInt(index) > 40) {
     return res.status(422).send("Index too high");
   }
 
-  // Add the index to the redis hash
   redisClient.hset("values", index, "Nothing yet!");
-  // Publish the index to the redis server
   redisPublisher.publish("insert", index);
-  // Add the index to the postgres table
   pgClient.query("INSERT INTO values(number) VALUES($1)", [index]);
 
   res.send({ working: true });
 });
 
-// Listen on port 5000
 app.listen(5000, (err) => {
-  console.log("Listening...");
+  console.log("Listening");
 });
